@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"text/template"
@@ -319,6 +320,45 @@ func handleSettingsSetRequest(w http.ResponseWriter, r *http.Request) {
 							continue
 						}
 						globalSettings.OwnshipModeS = fmt.Sprintf("%02X%02X%02X", hexn[0], hexn[1], hexn[2])
+					case "BNO055Axis":
+						// Expecting a number 0-7
+						if len(val.(string)) != 1 { // Wrong length
+							log.Printf("handleSettingsSetRequest: BNO055Axis: Wrong length\n")
+							continue
+						}
+						number, err := strconv.ParseUint(val.(string), 10, 8)
+						if err != nil {
+							log.Printf("handleSettingsSetRequest :BNO055Axis: %s\n", err.Error())
+							continue
+						}
+						if number > 7 {
+							log.Printf("handleSettingsSetRequest: BNO055Axis: number > 7 %d\n", number)
+							continue
+						}
+						if err != nil { // Number not valid.
+							log.Printf("handleSettingsSetRequest: BNO055Axis: %s\n", err.Error())
+							continue
+						}
+						globalSettings.BNO055Axis = byte(number)
+						// activate it
+						BNO055_WriteAxis(byte(number))
+					case "BNO055Calibration":
+						if len(val.(string)) != 36 { // Wrong length
+							log.Printf("handleSettingsSetRequest: BNO055Calibration: Wrong length, expect 36 (%s)\n", val.(string))
+							continue
+						}
+						result, calibration := BNO055_ParseCalibrationData(val.(string))
+						if !result {
+							log.Printf("handleSettingsSetRequest: BNO055Calibration: %s\n", val.(string))
+							continue
+						}
+						// activate it
+						if BNO055_WriteCalibrationData(calibration) {
+							globalSettings.BNO055Calibration = val.(string)
+							log.Printf("handleSettingsSetRequest: BNO055Calibration: wrote (%s)\n", val.(string))
+						} else {
+							log.Printf("handleSettingsSetRequest: BNO055Calibration: Error writing (%s)\n", val.(string))
+						}
 					default:
 						log.Printf("handleSettingsSetRequest:json: unrecognized key:%s\n", key)
 					}
@@ -360,6 +400,30 @@ func handleRebootRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Method", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
 	go delayReboot()
+}
+
+func handleBNO055UpdateInfo(w http.ResponseWriter, r *http.Request) {
+	setNoCache(w)
+	setJSONHeaders(w)
+	w.Header().Set("Access-Control-Allow-Method", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+	go BNO055GetInfo()
+}
+
+func handleResetBNO055Calib(w http.ResponseWriter, r *http.Request) {
+	setNoCache(w)
+	setJSONHeaders(w)
+	w.Header().Set("Access-Control-Allow-Method", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+	go BNO055_Init(true)
+}
+
+func handleResetBNO055Only(w http.ResponseWriter, r *http.Request) {
+	setNoCache(w)
+	setJSONHeaders(w)
+	w.Header().Set("Access-Control-Allow-Method", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+	go BNO055_Init(false)
 }
 
 func doRestartApp() {
@@ -594,6 +658,9 @@ func managementInterface() {
 	http.HandleFunc("/updateUpload", handleUpdatePostRequest)
 	http.HandleFunc("/roPartitionRebuild", handleroPartitionRebuild)
 	http.HandleFunc("/develmodetoggle", handleDevelModeToggle)
+	http.HandleFunc("/bno055updateinfo", handleBNO055UpdateInfo)
+	http.HandleFunc("/resetbno055calib", handleResetBNO055Calib)
+	http.HandleFunc("/resetbno055only", handleResetBNO055Only)
 
 	err := http.ListenAndServe(managementAddr, nil)
 
