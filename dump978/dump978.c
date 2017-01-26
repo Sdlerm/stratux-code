@@ -269,6 +269,8 @@ static inline int sync_word_fuzzy_compare(uint64_t word, uint64_t expected) {
   if (!diff)
     return 1; // 1 bit error
 
+  return 0;
+
   // >= 2 bits
   diff &= (diff - 1); // clear lowest set bit
   if (!diff)
